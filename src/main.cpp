@@ -5,14 +5,16 @@
 #include "time.h"
 #include <Wire.h>
 
+#include "credentials.h"
+
 #define ARDUINO_USB_MODE 1
 #define ARDUINO_USB_CDC_ON_BOOT 1
 
 #define NTP "pool.ntp.org"
 #define TZ "GMT0BST,M3.5.0/1,M10.5.0"
 
-const char* ssid = "PLUSNET-PCZP";
-const char* password = "c439258fd2";
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
 
 void syncNTP(void* pvParameters){
@@ -83,7 +85,7 @@ void displayTime(void* pvParameters){
 }
 
 void sunrise(void* pvParameters){
-  
+
 }
 
 void setup() {
