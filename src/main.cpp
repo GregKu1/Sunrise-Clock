@@ -10,7 +10,9 @@
 #define ARDUINO_USB_MODE 1
 #define ARDUINO_USB_CDC_ON_BOOT 1
 
-#define NTP "pool.ntp.org"
+#define LED_ONBOARD 15
+
+#define NTP "pool.ntp.org", "time.google.com", "time.nist.gov"
 #define TZ "GMT0BST,M3.5.0/1,M10.5.0"
 
 const char* ssid = WIFI_SSID;
@@ -19,77 +21,75 @@ const char* password = WIFI_PASSWORD;
 
 void syncNTP(void* pvParameters){
   while (1)
-  {
-    
-    Serial.print("connecting to ");
-    Serial.println(ssid);
+  {    
+    Serial.printf("connecting to %s \n", ssid);
     WiFi.begin(ssid, password);
+
     while (WiFi.status() != WL_CONNECTED)
     {
       vTaskDelay(pdMS_TO_TICKS(500));
-      Serial.println("waiting...");
+      Serial.println("connecting...");
     }
 
     Serial.println("\nWifi Connected");
 
+    configTzTime(TZ, NTP);  // syncs local clock with NTP server
 
-    configTzTime(TZ, NTP);
-    struct tm timeinfo;
-    int tries = 0;
-    while (!getLocalTime(&timeinfo, 5000) && tries < 3)
-    {
-      Serial.println("attempting to sync");
-      tries++;
-    }
-
-    if (tries < 3)
-    {
-      Serial.println("time sync ok");
-    }
-    else
-    {
-      Serial.println("failed to sync after 3 attempts");
-    }
-    
-
-    Serial.println("disconnecting from WiFi");
+    vTaskDelay(10000);
+ 
+    Serial.printf("disconnecting from %s \n", ssid);
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
 
-    //vTaskDelay(pdMS_TO_TICKS(12*60*60*1000)); // real
-    vTaskDelay(pdMS_TO_TICKS(60000));  // testing
+    vTaskDelay(12*60*60*1000 / portTICK_PERIOD_MS); // real
+    // vTaskDelay(pdMS_TO_TICKS(30000));  // testing
   }
 
 }
 
-void displayTime(void* pvParameters){
+void displayTime(void* pvParameters){ // this will actually handle displaying time on the OLED
   while (1)
   {
-    digitalWrite(LED_BUILTIN, HIGH);
 
-    time_t currentTime;
+    // time_t currentTime;
     struct tm timeinfo;
 
-    time(&currentTime); // get current time since 1970
-    localtime_r(&currentTime, &timeinfo); // converts time in seconds to local time and stores in a struct with fields
+    // time(&currentTime); // get current time since 1970
+    // localtime_r(&currentTime, &timeinfo); // converts time in seconds to local time and stores in a struct with fields
+
+    getLocalTime(&timeinfo);
 
     char timeString[64];
     strftime(timeString, sizeof(timeString), "%c", &timeinfo);
 
+    digitalWrite(LED_BUILTIN, HIGH);
+
     Serial.println(timeString);
+    vTaskDelay(200);
 
     digitalWrite(LED_BUILTIN, LOW);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    vTaskDelay(pdMS_TO_TICKS(800));
   }
   
 }
+void alarm(void* pvParameters){ // this one will 
 
-void sunrise(void* pvParameters){
+}
+
+
+void sunrise(void* pvParameters){ // this one will do the pwm control of dimmer.
+  while (1)
+  {
+    
+  }
+  
 
 }
 
 void setup() {
   Serial.begin(115200);
+  vTaskDelay(5000); //  wait up bro i gotta open serial monitor
 
   xTaskCreate(
     syncNTP,
