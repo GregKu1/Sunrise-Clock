@@ -10,7 +10,6 @@
 #define ARDUINO_USB_MODE 1
 #define ARDUINO_USB_CDC_ON_BOOT 1
 
-#define LED_ONBOARD 15
 
 #define NTP "pool.ntp.org", "time.google.com", "time.nist.gov"
 #define TZ "GMT0BST,M3.5.0/1,M10.5.0"
@@ -45,7 +44,7 @@ TimerHandle_t xAlarmTimer;
 
 TaskHandle_t xSunriseTaskHandle;
 
-TaskHandle_t xRecalculationHandle;
+TaskHandle_t xRecalculationTaskHandle;
 
 
 
@@ -169,7 +168,6 @@ void vDisplayTime(void* pvParameters){ // this will actually handle displaying t
 
 void vTimerCallback(TimerHandle_t xTimer){
   xTaskNotifyGive(xSunriseTaskHandle);
-  xTaskNotifyGive(xRecalculationHandle);
 
 }
 
@@ -193,14 +191,19 @@ void vSunrise(void* pvParameters){  // not thought through yet, ignore these
   while (1)
   {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    //Serial.println("sunrise started");
+    Serial.println("sunrise started");
     for (int i = 0; i < 30; i++)
     {
-      // Serial.printf("current minute: %d \n", i);
+      Serial.printf("current minute: %d \n", i);
       //pwm increase by 1/30th or smth
-      // vTaskDelay(pdMS_TO_TICKS(60*1000)); // increase every minute
-      vTaskDelay(pdMS_TO_TICKS(1000));  // testing
+      // vTaskDelay(pdMS_TO_TICKS(60*1000)); // wait 1 minute
+
+      digitalWrite(LED_BUILTIN, HIGH);
+      vTaskDelay(pdMS_TO_TICKS(500));
+      digitalWrite(LED_BUILTIN, LOW);
+      vTaskDelay(pdMS_TO_TICKS(500));
     }
+    recalculateNextAlarm();
     Serial.println("sunrise finished");
     vTaskDelay(pdMS_TO_TICKS(1*60*60*1000));  // wait 1 hour
     // pwm OFF
@@ -211,17 +214,18 @@ void vSunrise(void* pvParameters){  // not thought through yet, ignore these
 }
 
 void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
 
   xWeekLocker = xSemaphoreCreateMutex();
 
   xAlarmTimer = xTimerCreate("AlarmTimer", pdMS_TO_TICKS(1000), pdFALSE, 0, vTimerCallback);
 
-  week[0].alarmTime.tm_hour = 22;
-  week[0].alarmTime.tm_min = 46;
+  week[0].alarmTime.tm_hour = 18;
+  week[0].alarmTime.tm_min = 34;
   week[0].isActive = true;
 
-  week[1].alarmTime.tm_hour = 7;
-  week[1].alarmTime.tm_min = 0;
+  week[1].alarmTime.tm_hour = 18;
+  week[1].alarmTime.tm_min = 49;
   week[1].isActive = true;
 
   week[2].alarmTime.tm_hour = 7;
@@ -274,15 +278,6 @@ void setup() {
     NULL,
     1,
     &xSunriseTaskHandle
-  );
-
-  xTaskCreate(
-    vRecalculation,
-    "Recalculate",
-    8192,
-    NULL,
-    2,
-    &xRecalculationHandle
   );
 
 }
