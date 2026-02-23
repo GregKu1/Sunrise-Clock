@@ -2,13 +2,21 @@
 #include <USB.h>
 #include <USBCDC.h>
 #include <WiFi.h>
-#include "time.h"
-#include <Wire.h>
-
-#include "credentials.h"
-
+#include <time.h>
+#include "ui/ui.h"
+#include "credentials/credentials.h"
+#include <Adafruit_SSD1306.h>
 #define ARDUINO_USB_MODE 1
 #define ARDUINO_USB_CDC_ON_BOOT 1
+
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+Adafruit_SSD1306 Oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 
 #define NTP "pool.ntp.org", "time.google.com", "time.nist.gov"
@@ -16,6 +24,7 @@
 
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
+
 
 typedef struct  // structure holds alarm time and relevant values
 {
@@ -36,6 +45,7 @@ week[0].alarm.tm_min = 30;
 
 alarm_t week[7];
 
+Gui gui(&Oled);
 
 // freeRTOS stuff
 SemaphoreHandle_t xWeekLocker;
@@ -160,7 +170,7 @@ void vDisplayTime(void* pvParameters){ // this will actually handle displaying t
 
     Serial.println(timeString);
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(300));
   }
   
 }
@@ -182,7 +192,7 @@ void vRecalculation(void* pvParameters){
 }
 
 
-void vSunrise(void* pvParameters){  // not thought through yet, ignore these
+void vSunrise(void* pvParameters){  
   /* 
 - Unblocked by notification from vTimerCallback
 - Increases pwm duty cycle over a period
@@ -215,6 +225,8 @@ void vSunrise(void* pvParameters){  // not thought through yet, ignore these
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
+
+  gui.takeWeek(week);
 
   xWeekLocker = xSemaphoreCreateMutex();
 
