@@ -3,51 +3,32 @@
 #include <USBCDC.h>
 #include <WiFi.h>
 #include <time.h>
-#include "ui/ui.h"
+#include <ESP32Encoder.h>
+
+#include "types.h"
+#include "display.h"
 #include "credentials/credentials.h"
-#include <Adafruit_SSD1306.h>
+
+
 #define ARDUINO_USB_MODE 1
 #define ARDUINO_USB_CDC_ON_BOOT 1
 
-
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 64 // OLED display height, in pixels
-
-
-#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 Oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
-
 #define NTP "pool.ntp.org", "time.google.com", "time.nist.gov"
 #define TZ "GMT0BST,M3.5.0/1,M10.5.0"
+
+#define ENCODER_A 26
+#define ENCODER_B 27
+#define ENCODER_BUTTON 25
 
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
 
 
-typedef struct  // structure holds alarm time and relevant values
-{
-  
-  struct tm alarmTime; // tm struct to store time data
-  bool isActive; // alarm is active or not
-} alarm_t;
-
-// EXAMPLE USAGE OF STRUCT
-
-/*
-alarm_t week[7];  // create array of alarms for the week.
-week[0].status = 1; // alarm is active
-week[0].alarm.tm_hour = 8;  // 8:30AM
-week[0].alarm.tm_min = 30;  
-*/
-
-
 alarm_t week[7];
 
-Gui gui(&Oled);
-
 // freeRTOS stuff
+QueueHandle_t xEncoderQueue;
+
 SemaphoreHandle_t xWeekLocker;
 
 TimerHandle_t xAlarmTimer;
@@ -56,6 +37,7 @@ TaskHandle_t xSunriseTaskHandle;
 
 TaskHandle_t xRecalculationTaskHandle;
 
+ESP32Encoder encoder;
 
 
 void getTimeDifference(tm time_alarm, tm time_now, int* difference_seconds){  // gets the time difference in seconds
@@ -170,7 +152,12 @@ void vDisplayTime(void* pvParameters){ // this will actually handle displaying t
 
     Serial.println(timeString);
 
-    vTaskDelay(pdMS_TO_TICKS(300));
+    int encoder_event;
+    xQueueReceive(xEncoderQueue, &encoder_event, 0);
+    
+    Serial.println(encoder_event);
+
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
   
 }
@@ -193,7 +180,7 @@ void vRecalculation(void* pvParameters){
 
 
 void vSunrise(void* pvParameters){  
-  /* 
+/* 
 - Unblocked by notification from vTimerCallback
 - Increases pwm duty cycle over a period
 - Blocks itself
@@ -223,14 +210,90 @@ void vSunrise(void* pvParameters){
 
 }
 
+void vReadEncoder(void* pvParameters){
+  /*
+  - reads encoder
+  - converts counts into left/right (0/1) and click (2)
+  - sends converted "events" to a queue
+  */
+  int8_t event;
+  int encoder_pos = 0;
+  int prev_encoder_pos = 0;
+  int change;
+
+  uint8_t button_state = 0;
+  uint8_t prev_button_state = 0;
+  const int long_press_delay = 250;
+  int t_down = 0;
+  int t_up = 0;
+
+  while (1)
+  {
+    encoder_pos = encoder.getCount() / 4;
+    change = encoder_pos - prev_encoder_pos;
+    prev_encoder_pos = encoder_pos;
+
+    if (change > 0)
+    {
+      event = 1;
+      // Serial.println("increase");
+      xQueueOverwrite(xEncoderQueue, &event);
+    }
+    else if (change < 0)
+    {
+      event = 0;
+      // Serial.println("decrease");
+      xQueueOverwrite(xEncoderQueue, &event);
+    }
+    
+
+    button_state = !digitalRead(ENCODER_BUTTON);
+
+    if ( (button_state == 1) && (button_state != prev_button_state) )
+    {
+      t_down = millis();
+      prev_button_state = button_state;
+      Serial.println("down");
+    }
+
+    if ( (button_state == 0) && (button_state != prev_button_state) )
+    {
+      t_up = millis();
+      prev_button_state = button_state;
+      Serial.println("up");
+
+      if (t_up - t_down > long_press_delay)
+      {
+        event = 3;
+        Serial.println("long press");
+      }
+      else
+      {
+        event = 2;
+        Serial.println("click");
+      }
+
+      xQueueOverwrite(xEncoderQueue, &event);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+  
+} 
+
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(ENCODER_BUTTON, INPUT_PULLUP);
 
-  gui.takeWeek(week);
+  encoder.attachFullQuad(ENCODER_A, ENCODER_B);
+  encoder.clearCount();
+
 
   xWeekLocker = xSemaphoreCreateMutex();
 
   xAlarmTimer = xTimerCreate("AlarmTimer", pdMS_TO_TICKS(1000), pdFALSE, 0, vTimerCallback);
+
+  xEncoderQueue = xQueueCreate(1, sizeof(int8_t));
 
   week[0].alarmTime.tm_hour = 18;
   week[0].alarmTime.tm_min = 34;
@@ -292,6 +355,14 @@ void setup() {
     &xSunriseTaskHandle
   );
 
+    xTaskCreate(
+    vReadEncoder,
+    "Encoder",
+    4096,
+    NULL,
+    1,
+    NULL
+  );
 }
 
 void loop() {
