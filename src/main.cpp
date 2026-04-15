@@ -20,6 +20,7 @@
 #define ENCODER_B 27
 #define ENCODER_BUTTON 25
 
+
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
 
@@ -37,12 +38,15 @@ TaskHandle_t xSunriseTaskHandle;
 
 ESP32Encoder encoder;
 
+rbdimmer_channel_t* dimmer_channel;
+
 
 void getTimeDifference(tm time_alarm, tm time_now, int* difference_seconds){  // gets the time difference in seconds
   int alarm_seconds = time_alarm.tm_hour*3600 + time_alarm.tm_min*60 + time_alarm.tm_sec;
   int now_seconds = time_now.tm_hour*3600 + time_now.tm_min*60 + time_now.tm_sec;
   *difference_seconds = alarm_seconds - now_seconds;
 }
+
 
 void recalculateNextAlarm(){
   Serial.println("getting current time and recalculating alarm timer");
@@ -123,6 +127,21 @@ void vSyncNTP(void* pvParameters){
     if (firstSync == true)
     {
       recalculateNextAlarm();
+
+      Serial.println("init=" + rbdimmer_init());
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      Serial.println("regz=" + rbdimmer_register_zero_cross(16, 0, 0));
+      rbdimmer_config_t config = {
+        .gpio_pin = 17,
+        .phase = 0,
+        .initial_level = 0,
+        .curve_type = RBDIMMER_CURVE_RMS
+        };
+      Serial.println("crc=" + rbdimmer_create_channel(&config, &dimmer_channel));
+      Serial.println("setl=" + rbdimmer_set_level(dimmer_channel, 100));
+      Serial.println("freq=" + rbdimmer_get_frequency(0));
+      Serial.println("initialised dimmer");
+
       firstSync = false;
     }
     
@@ -133,6 +152,7 @@ void vSyncNTP(void* pvParameters){
 
 }
 
+
 void vDisplayTime(void* pvParameters){ // this will actually handle displaying time on the OLED
   while (1)
   {
@@ -140,7 +160,7 @@ void vDisplayTime(void* pvParameters){ // this will actually handle displaying t
   
     if (xQueueReceive(xEncoderQueue, &received_event, 0) == pdPASS)
     {
-      Serial.println(received_event);
+      // Serial.println(received_event);
 
       switch (received_event)
       {
@@ -170,7 +190,6 @@ void vDisplayTime(void* pvParameters){ // this will actually handle displaying t
           
     }
     
-  
     // time_t currentTime;
     struct tm timeinfo;
     getLocalTime(&timeinfo);
@@ -212,27 +231,26 @@ void vSunrise(void* pvParameters){
   while (1)
   {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    Serial.println("sunrise started");
-    for (int i = 0; i < 30; i++)
-    {
-      Serial.printf("current minute: %d \n", i);
-      //pwm increase by 1/30th or smth
-      // vTaskDelay(pdMS_TO_TICKS(60*1000)); // wait 1 minute
 
-      digitalWrite(LED_BUILTIN, HIGH);
-      vTaskDelay(pdMS_TO_TICKS(500));
-      digitalWrite(LED_BUILTIN, LOW);
-      vTaskDelay(pdMS_TO_TICKS(500));
+    Serial.println("sunrise started");
+    if (dimmer_channel != NULL)
+    {
+      rbdimmer_set_level_transition(dimmer_channel, 100, 30*60*1000);
+    }
+    Serial.println("sunrise finished");
+
+    vTaskDelay(pdMS_TO_TICKS(1*60*60*1000));  // wait 1 hour
+    if (dimmer_channel != NULL)
+    {
+      rbdimmer_set_level(dimmer_channel, 0);
     }
     recalculateNextAlarm();
-    Serial.println("sunrise finished");
-    vTaskDelay(pdMS_TO_TICKS(1*60*60*1000));  // wait 1 hour
-    // pwm OFF
     
   }
   
 
 }
+
 
 void vReadEncoder(void* pvParameters){
   /*
@@ -305,65 +323,65 @@ void vReadEncoder(void* pvParameters){
   
 } 
 
+
 void setup() {
+  Serial.begin(115200);
+
+  ui_init();
+
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(ENCODER_BUTTON, INPUT_PULLUP);
 
   encoder.attachFullQuad(ENCODER_A, ENCODER_B);
   encoder.clearCount();
 
-  ui_init();
+  vTaskDelay(pdMS_TO_TICKS(1000));
 
   xWeekLocker = xSemaphoreCreateMutex();
 
   xAlarmTimer = xTimerCreate("AlarmTimer", pdMS_TO_TICKS(1000), pdFALSE, 0, vTimerCallback);
 
-  xEncoderQueue = xQueueCreate(1, sizeof(int8_t));
+  xEncoderQueue = xQueueCreate(1, sizeof(enum Actions));
 
-  week[0].alarmTime.tm_hour = 0;
-  week[0].alarmTime.tm_min = 0;
+  week[0].alarmTime.tm_hour = 6;
+  week[0].alarmTime.tm_min = 30;
   week[0].alarmTime.tm_wday = 0;
   week[0].isActive = true;
 
-  week[1].alarmTime.tm_hour = 1;
-  week[1].alarmTime.tm_min = 11;
+  week[1].alarmTime.tm_hour = 6;
+  week[1].alarmTime.tm_min = 30;
   week[1].alarmTime.tm_wday = 1;
   week[1].isActive = true;
 
-  week[2].alarmTime.tm_hour = 2;
-  week[2].alarmTime.tm_min = 22;
+  week[2].alarmTime.tm_hour = 6;
+  week[2].alarmTime.tm_min = 30;
   week[2].alarmTime.tm_wday = 2;
   week[2].isActive = true;
 
-  week[3].alarmTime.tm_hour = 3;
-  week[3].alarmTime.tm_min = 33;
+  week[3].alarmTime.tm_hour = 6;
+  week[3].alarmTime.tm_min = 30;
   week[3].alarmTime.tm_wday = 3;
   week[3].isActive = true;
 
-  week[4].alarmTime.tm_hour = 4;
-  week[4].alarmTime.tm_min = 44;
+  week[4].alarmTime.tm_hour = 6;
+  week[4].alarmTime.tm_min = 30;
   week[4].alarmTime.tm_wday = 4;
   week[4].isActive = true;
 
-  week[5].alarmTime.tm_hour = 5;
-  week[5].alarmTime.tm_min = 55;
+  week[5].alarmTime.tm_hour = 6;
+  week[5].alarmTime.tm_min = 30;
   week[5].alarmTime.tm_wday = 5;
   week[5].isActive = true;
 
   week[6].alarmTime.tm_hour = 6;
-  week[6].alarmTime.tm_min = 06;
+  week[6].alarmTime.tm_min = 30;
   week[6].alarmTime.tm_wday = 6;
   week[6].isActive = true;
-
-
-  Serial.begin(115200);
-  vTaskDelay(1000); //  wait up i gotta open serial monitor
-
 
   xTaskCreate(
     vSyncNTP,
     "syncNTP",
-    4096,
+    8192,
     NULL,
     1,
     NULL
@@ -372,7 +390,7 @@ void setup() {
   xTaskCreate(
     vDisplayTime,
     "displayTime",
-    4096,
+    8192,
     NULL,
     3,
     NULL

@@ -1,5 +1,8 @@
 #pragma once
 #include <Arduino.h>
+#include <rbdimmerESP32.h>
+
+extern rbdimmer_channel_t* dimmer_channel;
 
 extern SemaphoreHandle_t xWeekLocker;
 

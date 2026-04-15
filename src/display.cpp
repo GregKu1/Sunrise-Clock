@@ -61,6 +61,8 @@ static bool edit_mode = false;
 static int edit_start_day;
 static int edit_start_offset;
 
+static int light_level = 0;
+
 
 void ui_init(){
     Wire.begin(SDA, SCL);
@@ -175,7 +177,21 @@ void ui_handle_encoder_increment(alarm_t *week){
 
         xSemaphoreGive(xWeekLocker);
     }
-    //else if not edit mode, increase lamp brightness
+    else if (ui_is_edit_mode() == false)
+    {
+        light_level += 10;
+        if (light_level >= 100)
+        {
+            light_level = 100;
+        }
+        if (dimmer_channel != NULL)
+        {
+            rbdimmer_set_level_transition(dimmer_channel, light_level, 100);
+        }
+        Serial.println(light_level);
+        
+    }
+    
 }
 
 void ui_handle_encoder_decrement(alarm_t *week){
@@ -202,11 +218,25 @@ void ui_handle_encoder_decrement(alarm_t *week){
         week[(edit_start_day + edit_start_offset) % 7].alarmTime.tm_min = edit_mins;
         xSemaphoreGive(xWeekLocker);
     }
-    //else if not edit mode, decrease lamp brightness
+    else if (ui_is_edit_mode() == false)
+    {
+        light_level -= 10;
+        if (light_level <= 0)
+        {
+            light_level = 0;
+        }
+        if (dimmer_channel != NULL)
+        {
+            rbdimmer_set_level_transition(dimmer_channel, light_level, 100);
+        }
+        
+        Serial.println(light_level);
+        
+    }
 
 }
 
 bool ui_is_edit_mode(){
-    Serial.printf("edit mode: %d \n", edit_mode);
+    // Serial.printf("edit mode: %d \n", edit_mode);
     return edit_mode;
 }
