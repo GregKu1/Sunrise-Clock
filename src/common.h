@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
+extern SemaphoreHandle_t xWeekLocker;
+
 typedef struct  // structure holds alarm time and relevant values
 {
   
@@ -8,6 +10,13 @@ typedef struct  // structure holds alarm time and relevant values
   bool isActive; // alarm is active or not
 } alarm_t;
 
+  enum Actions {
+    LEFT,
+    RIGHT,
+    CLICK,
+    LONG_PRESS
+  };
+  
 // EXAMPLE USAGE OF STRUCT
 
 /*

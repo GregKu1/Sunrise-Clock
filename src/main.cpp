@@ -5,7 +5,7 @@
 #include <time.h>
 #include <ESP32Encoder.h>
 
-#include "types.h"
+#include "common.h"
 #include "display.h"
 #include "credentials/credentials.h"
 
@@ -35,8 +35,6 @@ TimerHandle_t xAlarmTimer;
 
 TaskHandle_t xSunriseTaskHandle;
 
-TaskHandle_t xRecalculationTaskHandle;
-
 ESP32Encoder encoder;
 
 
@@ -51,23 +49,19 @@ void recalculateNextAlarm(){
   struct tm now;
   getLocalTime(&now);
 
-  int dayOfWeek = now.tm_wday; // sunday = 0, we are indexing week from monday = 0
-  int dayOfWeekCorrected;
-
-  dayOfWeekCorrected = (dayOfWeek + 6) % 7 ;  // convert to monday 0 indexed week
-
+  int dayOfWeek = now.tm_wday; // sunday = 0
   int secondsUntilNextAlarm;
 
-  xSemaphoreTake(xWeekLocker, 100);
+  xSemaphoreTake(xWeekLocker, portMAX_DELAY);
 
   bool foundActiveAlarm = false;
-  int targetDay = dayOfWeekCorrected; // day in the week that we are searching, starting at today
+  int targetDay = dayOfWeek; // day in the week that we are searching, starting at today
   int daysAhead;  // days ahead from today, starting today
 
 
   for (daysAhead = 0; daysAhead < 7; daysAhead++) // check days in the week, starting today and go for 1 week forward
   {
-    targetDay = (dayOfWeekCorrected + daysAhead) % 7; // wrap around to stay inside the week
+    targetDay = (dayOfWeek + daysAhead) % 7; // wrap around to stay inside the week
 
     if (week[targetDay].isActive == false)
     {
@@ -142,20 +136,60 @@ void vSyncNTP(void* pvParameters){
 void vDisplayTime(void* pvParameters){ // this will actually handle displaying time on the OLED
   while (1)
   {
+    enum Actions received_event;
+  
+    if (xQueueReceive(xEncoderQueue, &received_event, 0) == pdPASS)
+    {
+      Serial.println(received_event);
 
+      switch (received_event)
+      {
+      case LEFT:
+        ui_handle_encoder_decrement(week);
+        break;
+
+      case RIGHT:
+        ui_handle_encoder_increment(week);
+        break;
+
+      case CLICK:
+        if (ui_handle_click(week) == true)
+        {
+          recalculateNextAlarm();
+        }
+        
+        break;
+      
+      case LONG_PRESS:
+        ui_handle_long_press(week);
+        break;
+      
+      default:
+        break;
+      }
+          
+    }
+    
+  
     // time_t currentTime;
     struct tm timeinfo;
     getLocalTime(&timeinfo);
 
-    char timeString[64];
-    strftime(timeString, sizeof(timeString), "%c", &timeinfo);
+    // char timeString[64];
+    // strftime(timeString, sizeof(timeString), "%c", &timeinfo);
 
-    Serial.println(timeString);
+    // Serial.println(timeString);
 
-    int encoder_event;
-    xQueueReceive(xEncoderQueue, &encoder_event, 0);
-    
-    Serial.println(encoder_event);
+    // ui_draw_test();
+
+    if (ui_is_edit_mode() == true)
+    {
+      ui_draw_edit_mode(week);  
+    }
+    else
+    {
+      ui_draw_display_mode(&timeinfo);
+    }
 
     vTaskDelay(pdMS_TO_TICKS(10));
   }
@@ -166,16 +200,6 @@ void vDisplayTime(void* pvParameters){ // this will actually handle displaying t
 void vTimerCallback(TimerHandle_t xTimer){
   xTaskNotifyGive(xSunriseTaskHandle);
 
-}
-
-void vRecalculation(void* pvParameters){
-  while (1)
-  {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    Serial.println("running recalculation");
-    recalculateNextAlarm();
-  }
-  
 }
 
 
@@ -216,14 +240,14 @@ void vReadEncoder(void* pvParameters){
   - converts counts into left/right (0/1) and click (2)
   - sends converted "events" to a queue
   */
-  int8_t event;
+
   int encoder_pos = 0;
   int prev_encoder_pos = 0;
   int change;
 
   uint8_t button_state = 0;
   uint8_t prev_button_state = 0;
-  const int long_press_delay = 250;
+  const int long_press_delay = 200; //ms
   int t_down = 0;
   int t_up = 0;
 
@@ -235,15 +259,15 @@ void vReadEncoder(void* pvParameters){
 
     if (change > 0)
     {
-      event = 1;
+      enum Actions sent_event = RIGHT;
       // Serial.println("increase");
-      xQueueOverwrite(xEncoderQueue, &event);
+      xQueueOverwrite(xEncoderQueue, &sent_event);
     }
     else if (change < 0)
     {
-      event = 0;
+      enum Actions sent_event = LEFT;
       // Serial.println("decrease");
-      xQueueOverwrite(xEncoderQueue, &event);
+      xQueueOverwrite(xEncoderQueue, &sent_event);
     }
     
 
@@ -253,27 +277,27 @@ void vReadEncoder(void* pvParameters){
     {
       t_down = millis();
       prev_button_state = button_state;
-      Serial.println("down");
+      // Serial.println("down");
     }
 
     if ( (button_state == 0) && (button_state != prev_button_state) )
     {
       t_up = millis();
       prev_button_state = button_state;
-      Serial.println("up");
+      // Serial.println("up");
 
       if (t_up - t_down > long_press_delay)
       {
-        event = 3;
-        Serial.println("long press");
+        enum Actions sent_event = LONG_PRESS;
+        xQueueOverwrite(xEncoderQueue, &sent_event);
+        // Serial.println("long press");
       }
       else
       {
-        event = 2;
-        Serial.println("click");
+        enum Actions sent_event = CLICK;
+        xQueueOverwrite(xEncoderQueue, &sent_event);
+        // Serial.println("click");
       }
-
-      xQueueOverwrite(xEncoderQueue, &event);
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -288,6 +312,7 @@ void setup() {
   encoder.attachFullQuad(ENCODER_A, ENCODER_B);
   encoder.clearCount();
 
+  ui_init();
 
   xWeekLocker = xSemaphoreCreateMutex();
 
@@ -295,37 +320,44 @@ void setup() {
 
   xEncoderQueue = xQueueCreate(1, sizeof(int8_t));
 
-  week[0].alarmTime.tm_hour = 18;
-  week[0].alarmTime.tm_min = 34;
+  week[0].alarmTime.tm_hour = 0;
+  week[0].alarmTime.tm_min = 0;
+  week[0].alarmTime.tm_wday = 0;
   week[0].isActive = true;
 
-  week[1].alarmTime.tm_hour = 18;
-  week[1].alarmTime.tm_min = 49;
+  week[1].alarmTime.tm_hour = 1;
+  week[1].alarmTime.tm_min = 11;
+  week[1].alarmTime.tm_wday = 1;
   week[1].isActive = true;
 
-  week[2].alarmTime.tm_hour = 7;
-  week[2].alarmTime.tm_min = 0;
+  week[2].alarmTime.tm_hour = 2;
+  week[2].alarmTime.tm_min = 22;
+  week[2].alarmTime.tm_wday = 2;
   week[2].isActive = true;
 
-  week[3].alarmTime.tm_hour = 7;
-  week[3].alarmTime.tm_min = 0;
+  week[3].alarmTime.tm_hour = 3;
+  week[3].alarmTime.tm_min = 33;
+  week[3].alarmTime.tm_wday = 3;
   week[3].isActive = true;
 
-  week[4].alarmTime.tm_hour = 7;
-  week[4].alarmTime.tm_min = 0;
+  week[4].alarmTime.tm_hour = 4;
+  week[4].alarmTime.tm_min = 44;
+  week[4].alarmTime.tm_wday = 4;
   week[4].isActive = true;
 
-  week[5].alarmTime.tm_hour = 7;
-  week[5].alarmTime.tm_min = 0;
+  week[5].alarmTime.tm_hour = 5;
+  week[5].alarmTime.tm_min = 55;
+  week[5].alarmTime.tm_wday = 5;
   week[5].isActive = true;
 
-  week[6].alarmTime.tm_hour = 7;
-  week[6].alarmTime.tm_min = 0;
+  week[6].alarmTime.tm_hour = 6;
+  week[6].alarmTime.tm_min = 06;
+  week[6].alarmTime.tm_wday = 6;
   week[6].isActive = true;
 
 
   Serial.begin(115200);
-  vTaskDelay(5000); //  wait up bro i gotta open serial monitor
+  vTaskDelay(1000); //  wait up i gotta open serial monitor
 
 
   xTaskCreate(
@@ -364,6 +396,8 @@ void setup() {
     NULL
   );
 }
+
+
 
 void loop() {
   // put your main code here, to run repeatedly:
