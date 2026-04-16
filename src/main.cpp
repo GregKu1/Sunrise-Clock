@@ -71,6 +71,7 @@ void recalculateNextAlarm(){
     {
       continue;
     }
+
     foundActiveAlarm = true;
     break;
     
@@ -78,14 +79,18 @@ void recalculateNextAlarm(){
   
   if (foundActiveAlarm == true)
   {
-    int alarm_seconds = week[targetDay].alarmTime.tm_hour * 3600 + week[targetDay].alarmTime.tm_min * 60;
+    int alarm_seconds = week[targetDay].alarmTime.tm_hour * 3600 + week[targetDay].alarmTime.tm_min * 60 + week[targetDay].alarmTime.tm_sec;
     int now_seconds = now.tm_hour * 3600 + now.tm_min * 60 + now.tm_sec;
     secondsUntilNextAlarm = (daysAhead * 86400) + (alarm_seconds - now_seconds);
+    int msUntilNextAlarm = secondsUntilNextAlarm * 1000;  //passing secondsUntilNextAlarm*1000 directly doesnt work
 
     Serial.printf("recalculation complete, time until next alarm is %d seconds \n", secondsUntilNextAlarm);
-    xTimerStop(xAlarmTimer, 500);
-    xTimerChangePeriod(xAlarmTimer, pdMS_TO_TICKS((uint32_t)secondsUntilNextAlarm*1000), 500);
-    xTimerStart(xAlarmTimer, 500);
+
+    if (xTimerChangePeriod(xAlarmTimer, msUntilNextAlarm, 5000) == pdPASS)  // absolutely do NOT use pdMS to ticks in this case as it will force an overflow
+    {
+      Serial.printf("timer successfully updated to: %d ticks \n", xTimerGetPeriod(xAlarmTimer));
+    }
+    
   }
   else
   {
@@ -203,7 +208,7 @@ void vDisplayTime(void* pvParameters){ // this will actually handle displaying t
       ui_draw_display_mode(&timeinfo);
     }
 
-    Serial.println(xTimerGetExpiryTime(xAlarmTimer) - xTaskGetTickCount());
+    Serial.printf("expiry time: %d || ticks since start: %d || ticks remaining: %d \n", xTimerGetExpiryTime(xAlarmTimer), xTaskGetTickCount(), xTimerGetExpiryTime(xAlarmTimer) - xTaskGetTickCount());
 
     vTaskDelay(pdMS_TO_TICKS(10));
   }
@@ -231,6 +236,7 @@ void vSunrise(void* pvParameters){
     if (dimmer_channel != NULL)
     {
       rbdimmer_set_level_transition(dimmer_channel, 100, 30*60*1000);
+      digitalWrite(LED_BUILTIN, HIGH);
     }
     Serial.println("sunrise finished");
     recalculateNextAlarm();
@@ -239,6 +245,7 @@ void vSunrise(void* pvParameters){
     if (dimmer_channel != NULL)
     {
       rbdimmer_set_level(dimmer_channel, 0);
+      digitalWrite(LED_BUILTIN, LOW);
     }
     
   }
