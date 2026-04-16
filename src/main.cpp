@@ -78,7 +78,6 @@ void recalculateNextAlarm(){
   
   if (foundActiveAlarm == true)
   {
-    getLocalTime(&now);
     int alarm_seconds = week[targetDay].alarmTime.tm_hour * 3600 + week[targetDay].alarmTime.tm_min * 60;
     int now_seconds = now.tm_hour * 3600 + now.tm_min * 60 + now.tm_sec;
     secondsUntilNextAlarm = (daysAhead * 86400) + (alarm_seconds - now_seconds);
@@ -133,7 +132,6 @@ void vSyncNTP(void* pvParameters){
         .curve_type = RBDIMMER_CURVE_RMS
         };
       Serial.println("crc=" + rbdimmer_create_channel(&config, &dimmer_channel));
-      Serial.println("setl=" + rbdimmer_set_level(dimmer_channel, 100));
       Serial.println("freq=" + rbdimmer_get_frequency(0));
       Serial.println("initialised dimmer");
 
