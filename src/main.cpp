@@ -134,7 +134,7 @@ void vSyncNTP(void* pvParameters){
         .gpio_pin = 17,
         .phase = 0,
         .initial_level = 0,
-        .curve_type = RBDIMMER_CURVE_RMS
+        .curve_type = RBDIMMER_CURVE_LINEAR
         };
       Serial.println("crc=" + rbdimmer_create_channel(&config, &dimmer_channel));
       Serial.println("freq=" + rbdimmer_get_frequency(0));

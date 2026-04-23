@@ -67,6 +67,7 @@ static int light_level = 0;
 void ui_init(){
     Wire.begin(SDA, SCL);
     u8g2.begin();
+    u8g2.setContrast(1);
 }
 
 void ui_draw_test(){
@@ -180,9 +181,9 @@ void ui_handle_encoder_increment(alarm_t *week){
     else if (ui_is_edit_mode() == false)
     {
         light_level += 10;
-        if (light_level >= 100)
+        if (light_level >= 90)
         {
-            light_level = 100;
+            light_level = 90;
         }
         if (dimmer_channel != NULL)
         {
